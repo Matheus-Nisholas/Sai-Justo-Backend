@@ -83,4 +83,87 @@ public class CalculoRescisaoServiceTest {
         assertEquals(new BigDecimal("0.00"), resp.getTotalDescontos());
         assertEquals(new BigDecimal("7500.00"), resp.getTotalLiquido());
     }
+    @Test
+    void deveCalcularDiasAvisoPrevio_basico30Dias_seMenosDeUmAno() {
+        CalculoRescisaoService svc = new CalculoRescisaoService();
+        int dias = svc.calcularDiasAvisoPrevio(
+                LocalDate.of(2025, 1, 10),
+                LocalDate.of(2025, 8, 15)
+        );
+        assertEquals(30, dias);
+    }
+
+    @Test
+    void deveCalcularDiasAvisoPrevio_comAcrescimoPorAnos_comLimite90() {
+        CalculoRescisaoService svc = new CalculoRescisaoService();
+
+        // 5 anos completos: 30 + (5-1)*3 = 42
+        int dias5 = svc.calcularDiasAvisoPrevio(
+                LocalDate.of(2020, 8, 1),
+                LocalDate.of(2025, 8, 15)
+        );
+        assertEquals(42, dias5);
+
+        // 25 anos completos -> 30 + 24*3 = 102 -> cap 90
+        int diasCap = svc.calcularDiasAvisoPrevio(
+                LocalDate.of(2000, 1, 1),
+                LocalDate.of(2025, 1, 2)
+        );
+        assertEquals(90, diasCap);
+    }
+
+    @Test
+    void deveCalcularAvisoPrevioIndenizado_valorProporcionalAoSalario() {
+        CalculoRescisaoService svc = new CalculoRescisaoService();
+        // Salário 3000 -> diário 100; aviso 42 dias -> 4200.00
+        assertEquals(
+                new BigDecimal("4200.00"),
+                svc.calcularAvisoPrevioIndenizado(new BigDecimal("3000.00"), 42)
+        );
+    }
+
+    @Test
+    void fluxoIncluiAvisoIndenizadoQuandoMarcado() {
+        CalculoRescisaoService svc = new CalculoRescisaoService();
+        // Com dados: saldo(15 dias) = 1500; 13º (8/12)=2000; férias prop=2666.67; aviso(42 dias)=4200
+        CalculoRescisaoResponse resp = svc.calcular(
+                CalculoRescisaoRequest.builder()
+                        .tipoRescisao(br.com.nish.calculadora.dto.TipoRescisao.SEM_JUSTA_CAUSA)
+                        .salarioMensal(new BigDecimal("3000.00"))
+                        .dataAdmissao(LocalDate.of(2020, 8, 1))
+                        .dataDesligamento(LocalDate.of(2025, 8, 15))
+                        .avisoIndenizado(true)                 // inclui aviso
+                        .feriasVencidasDias(0)
+                        .mesesTrabalhadosNoAnoAtual(8)
+                        .saldoFgtsDepositado(new BigDecimal("0.00"))
+                        .build()
+        );
+
+        // 1500 + 2000 + 2666.67 + 4200 = 10366.67
+        assertEquals(new BigDecimal("10366.67"), resp.getTotalBruto());
+        assertEquals(new BigDecimal("0.00"), resp.getTotalDescontos());
+        assertEquals(new BigDecimal("10366.67"), resp.getTotalLiquido());
+    }
+
+    @Test
+    void fluxoNaoIncluiAvisoQuandoTrabalhado() {
+        CalculoRescisaoService svc = new CalculoRescisaoService();
+        // Mesmo cenário, mas avisoIndenizado=false -> sem a verba do aviso
+        CalculoRescisaoResponse resp = svc.calcular(
+                CalculoRescisaoRequest.builder()
+                        .tipoRescisao(br.com.nish.calculadora.dto.TipoRescisao.SEM_JUSTA_CAUSA)
+                        .salarioMensal(new BigDecimal("3000.00"))
+                        .dataAdmissao(LocalDate.of(2020, 8, 1))
+                        .dataDesligamento(LocalDate.of(2025, 8, 15))
+                        .avisoIndenizado(false)
+                        .feriasVencidasDias(0)
+                        .mesesTrabalhadosNoAnoAtual(8)
+                        .saldoFgtsDepositado(new BigDecimal("0.00"))
+                        .build()
+        );
+
+        // 1500 + 2000 + 2666.67 = 6166.67
+        assertEquals(new BigDecimal("6166.67"), resp.getTotalBruto());
+    }
+
 }
