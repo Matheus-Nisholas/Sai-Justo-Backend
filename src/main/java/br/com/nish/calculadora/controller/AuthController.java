@@ -43,7 +43,7 @@ public class AuthController {
     /**
      * Registra um novo usuário com ROLE_USER.
      * @param request dados de registro
-     * @return 200 OK se criado
+     * @return 200 OK se criado, 400 se email já existir
      */
     @PostMapping("/register")
     @Transactional
@@ -70,7 +70,7 @@ public class AuthController {
     /**
      * Autentica e retorna o token JWT.
      * @param request credenciais
-     * @return token e expiração
+     * @return token e expiração em segundos
      */
     @PostMapping("/login")
     @Operation(summary = "Login")
@@ -83,7 +83,7 @@ public class AuthController {
         claims.put("roles", "ROLE_USER");
         String token = jwtService.generateToken(request.getEmail(), claims);
 
-        long expiresIn = (long) 60 * 60; // espelha jwt.expiration-minutes=60
+        long expiresIn = (long) 60 * 60;
         AuthResponse response = new AuthResponse(token, expiresIn);
         return ResponseEntity.ok(response);
     }
