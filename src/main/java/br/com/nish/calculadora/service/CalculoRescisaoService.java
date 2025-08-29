@@ -31,7 +31,6 @@ public class CalculoRescisaoService {
         );
         componentes.add(new Componente("13º proporcional", decimoProporcional));
 
-        // NOVO: férias proporcionais + 1/3 e férias vencidas (opcional)
         BigDecimal feriasPropMaisTerco = calcularFeriasProporcionaisMaisUmTerco(
                 req.getSalarioMensal(), req.getMesesTrabalhadosNoAnoAtual()
         );
@@ -42,6 +41,13 @@ public class CalculoRescisaoService {
                     req.getSalarioMensal(), req.getFeriasVencidasDias()
             );
             componentes.add(new Componente("Férias vencidas + 1/3", feriasVencidas));
+        }
+
+        // >>> NOVO: Aviso prévio indenizado (só adiciona se for indenizado)
+        if (req.isAvisoIndenizado()) {
+            int diasAviso = calcularDiasAvisoPrevio(req.getDataAdmissao(), req.getDataDesligamento());
+            BigDecimal avisoIndenizado = calcularAvisoPrevioIndenizado(req.getSalarioMensal(), diasAviso);
+            componentes.add(new Componente("Aviso prévio indenizado (" + diasAviso + " dias)", avisoIndenizado));
         }
 
         BigDecimal totalBruto = soma(componentes);
@@ -57,25 +63,9 @@ public class CalculoRescisaoService {
                 .build();
     }
 
-    /** Férias proporcionais = (salário * meses/12) + 1/3 sobre esse valor. */
-    BigDecimal calcularFeriasProporcionaisMaisUmTerco(BigDecimal salarioMensal, int mesesNoAno) {
-        BigDecimal baseProp = salarioMensal.multiply(new BigDecimal(mesesNoAno))
-                .divide(DOZE, 10, RoundingMode.HALF_UP);
-        BigDecimal umTerco = baseProp.divide(new BigDecimal("3"), 10, RoundingMode.HALF_UP);
-        return baseProp.add(umTerco).setScale(2, RoundingMode.HALF_UP);
-    }
-
-    /** Férias vencidas em dias corridos (ex.: 10 dias) + 1/3. */
-    BigDecimal calcularFeriasVencidasMaisUmTerco(BigDecimal salarioMensal, int diasVencidos) {
-        BigDecimal diario = salarioMensal.divide(TRINTA, 10, RoundingMode.HALF_UP);
-        BigDecimal base = diario.multiply(new BigDecimal(diasVencidos));
-        BigDecimal umTerco = base.divide(new BigDecimal("3"), 10, RoundingMode.HALF_UP);
-        return base.add(umTerco).setScale(2, RoundingMode.HALF_UP);
-    }
-
     /** Saldo de salário = (salário / 30) * dias trabalhados no mês do desligamento. */
     BigDecimal calcularSaldoSalario(BigDecimal salarioMensal, LocalDate dataDesligamento) {
-        int diasTrabalhadosNoMes = dataDesligamento.getDayOfMonth(); // considera que trabalhou até o dia do desligamento
+        int diasTrabalhadosNoMes = dataDesligamento.getDayOfMonth();
         BigDecimal diario = salarioMensal.divide(TRINTA, 10, RoundingMode.HALF_UP);
         return diario.multiply(new BigDecimal(diasTrabalhadosNoMes)).setScale(2, RoundingMode.HALF_UP);
     }
@@ -84,6 +74,47 @@ public class CalculoRescisaoService {
     BigDecimal calcularDecimoTerceiroProporcional(BigDecimal salarioMensal, int mesesNoAno) {
         BigDecimal proporcao = new BigDecimal(mesesNoAno).divide(DOZE, 10, RoundingMode.HALF_UP);
         return salarioMensal.multiply(proporcao).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** Férias proporcionais = (salário * meses/12) + 1/3 sobre esse valor. */
+    BigDecimal calcularFeriasProporcionaisMaisUmTerco(BigDecimal salarioMensal, int mesesNoAno) {
+        BigDecimal baseProp = salarioMensal.multiply(new BigDecimal(mesesNoAno))
+                .divide(DOZE, 10, RoundingMode.HALF_UP);
+        BigDecimal umTerco = baseProp.divide(new BigDecimal("3"), 10, RoundingMode.HALF_UP);
+        return baseProp.add(umTerco).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** Férias vencidas em dias corridos + 1/3. */
+    BigDecimal calcularFeriasVencidasMaisUmTerco(BigDecimal salarioMensal, int diasVencidos) {
+        BigDecimal diario = salarioMensal.divide(TRINTA, 10, RoundingMode.HALF_UP);
+        BigDecimal base = diario.multiply(new BigDecimal(diasVencidos));
+        BigDecimal umTerco = base.divide(new BigDecimal("3"), 10, RoundingMode.HALF_UP);
+        return base.add(umTerco).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Dias de aviso prévio: 30 + 3 dias por ano completo após o 1º, limitado a 90.
+     */
+    int calcularDiasAvisoPrevio(LocalDate dataAdmissao, LocalDate dataDesligamento) {
+        if (dataAdmissao == null || dataDesligamento == null || dataDesligamento.isBefore(dataAdmissao)) {
+            return 30; // fallback seguro
+        }
+        // anos completos de vínculo
+        int anos = dataAdmissao.until(dataDesligamento).getYears();
+        if (anos <= 1) {
+            return 30;
+        }
+        int extra = (anos - 1) * 3;
+        int total = 30 + extra;
+        return Math.min(total, 90);
+    }
+
+    /**
+     * Aviso prévio indenizado = (salário/30) * diasAviso.
+     */
+    BigDecimal calcularAvisoPrevioIndenizado(BigDecimal salarioMensal, int diasAviso) {
+        BigDecimal diario = salarioMensal.divide(TRINTA, 10, RoundingMode.HALF_UP);
+        return diario.multiply(new BigDecimal(diasAviso)).setScale(2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal soma(List<Componente> comps) {
