@@ -1,0 +1,42 @@
+### 1) Registrar
+POST http://localhost:8080/auth/register
+Content-Type: application/json
+
+{
+  "email": "nish@example.com",
+  "nome": "Nisholas",
+  "senha": "SenhaForte123!"
+}
+
+### 2) Login
+POST http://localhost:8080/auth/login
+Content-Type: application/json
+
+{
+  "email": "nish@example.com",
+  "senha": "SenhaForte123!"
+}
+
+### 3) Me (colar o token abaixo)
+GET http://localhost:8080/auth/me
+Authorization: Bearer {{access_token}}
+
+### 4) Calcular rescisão (usar o mesmo token)
+POST http://localhost:8080/api/v1/rescisoes/calcular
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "tipoRescisao": "SEM_JUSTA_CAUSA",
+  "salarioMensal": 3000.00,
+  "dataAdmissao": "2023-01-10",
+  "dataDesligamento": "2025-08-29",
+  "avisoIndenizado": true,
+  "feriasVencidasDias": 10,
+  "mesesTrabalhadosNoAnoAtual": 8,
+  "saldoFgtsDepositado": 5000.00
+}
+
+### 5) Histórico
+GET http://localhost:8080/api/v1/rescisoes/historico?page=0&size=10
+Authorization: Bearer {{access_token}}
