@@ -166,4 +166,61 @@ public class CalculoRescisaoServiceTest {
         assertEquals(new BigDecimal("6166.67"), resp.getTotalBruto());
     }
 
+    @Test
+    void deveCalcularMultaFgts40porCento_SemJustaCausa() {
+        CalculoRescisaoService svc = new CalculoRescisaoService();
+        BigDecimal multa = svc.calcularMultaFgts(
+                br.com.nish.calculadora.dto.TipoRescisao.SEM_JUSTA_CAUSA,
+                new BigDecimal("5000.00")
+        );
+        assertEquals(new BigDecimal("2000.00"), multa);
+    }
+
+    @Test
+    void deveCalcularMultaFgts20porCento_Acordo484A() {
+        CalculoRescisaoService svc = new CalculoRescisaoService();
+        BigDecimal multa = svc.calcularMultaFgts(
+                br.com.nish.calculadora.dto.TipoRescisao.ACORDO_484A,
+                new BigDecimal("5000.00")
+        );
+        assertEquals(new BigDecimal("1000.00"), multa);
+    }
+
+    @Test
+    void deveCalcularMultaFgtsZero_JustaCausaOuPedidoDemissao() {
+        CalculoRescisaoService svc = new CalculoRescisaoService();
+        BigDecimal multa = svc.calcularMultaFgts(
+                br.com.nish.calculadora.dto.TipoRescisao.JUSTA_CAUSA,
+                new BigDecimal("5000.00")
+        );
+        assertEquals(new BigDecimal("0.00"), multa);
+    }
+
+    @Test
+    void fluxoIncluiSaldoFgtsEMulta() {
+        CalculoRescisaoService svc = new CalculoRescisaoService();
+
+        CalculoRescisaoResponse resp = svc.calcular(
+                CalculoRescisaoRequest.builder()
+                        .tipoRescisao(br.com.nish.calculadora.dto.TipoRescisao.SEM_JUSTA_CAUSA)
+                        .salarioMensal(new BigDecimal("3000.00"))
+                        .dataAdmissao(LocalDate.of(2020, 1, 1))
+                        .dataDesligamento(LocalDate.of(2025, 8, 15))
+                        .avisoIndenizado(false)
+                        .feriasVencidasDias(0)
+                        .mesesTrabalhadosNoAnoAtual(8)
+                        .saldoFgtsDepositado(new BigDecimal("5000.00"))
+                        .build()
+        );
+
+        // Deve incluir "Saldo FGTS depositado" (5000) e "Multa FGTS" (2000)
+        boolean temSaldoFgts = resp.getComponentes().stream()
+                .anyMatch(c -> c.getNome().contains("Saldo FGTS"));
+        boolean temMultaFgts = resp.getComponentes().stream()
+                .anyMatch(c -> c.getNome().contains("Multa FGTS"));
+
+        assertEquals(true, temSaldoFgts);
+        assertEquals(true, temMultaFgts);
+    }
+
 }
