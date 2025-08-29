@@ -12,41 +12,57 @@ import org.springframework.stereotype.Service;
 
 /**
  * Serviço responsável por executar o cálculo das verbas rescisórias.
- * Implementação MVP com valores simulados para validar o fluxo.
+ * Incremento 1: saldo de salário + 13º proporcional (reais), demais verbas virão nas próximas etapas.
  */
 @Service
 public class CalculoRescisaoService {
 
-    private static final BigDecimal TRES = new BigDecimal("3");
+    private static final BigDecimal TRINTA = new BigDecimal("30");
+    private static final BigDecimal DOZE   = new BigDecimal("12");
 
-    /**
-     * Executa um cálculo mock usando o salário mensal como base.
-     * Substituir por fórmulas reais nas próximas iterações.
-     *
-     * @param req payload de entrada
-     * @return resposta com breakdown e totais
-     */
     public CalculoRescisaoResponse calcular(CalculoRescisaoRequest req) {
-        BigDecimal base = req.getSalarioMensal();
-        BigDecimal parcela = base.divide(TRES, 2, RoundingMode.HALF_UP);
-
         List<Componente> componentes = new ArrayList<Componente>();
-        componentes.add(new Componente("Saldo de salário", parcela));
-        componentes.add(new Componente("13º proporcional", parcela));
-        componentes.add(new Componente("Férias + 1/3", parcela));
 
-        BigDecimal totalBruto = parcela.multiply(TRES).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal saldoSalario = calcularSaldoSalario(req.getSalarioMensal(), req.getDataDesligamento());
+        componentes.add(new Componente("Saldo de salário", saldoSalario));
+
+        BigDecimal decimoProporcional = calcularDecimoTerceiroProporcional(
+                req.getSalarioMensal(), req.getMesesTrabalhadosNoAnoAtual()
+        );
+        componentes.add(new Componente("13º proporcional", decimoProporcional));
+
+        // Próximos incrementos: férias proporcionais + 1/3, aviso prévio, FGTS etc.
+        BigDecimal totalBruto = soma(componentes);
         BigDecimal totalDescontos = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         BigDecimal totalLiquido = totalBruto.subtract(totalDescontos).setScale(2, RoundingMode.HALF_UP);
 
-        CalculoRescisaoResponse response = CalculoRescisaoResponse.builder()
+        return CalculoRescisaoResponse.builder()
                 .componentes(componentes)
                 .totalBruto(totalBruto)
                 .totalDescontos(totalDescontos)
                 .totalLiquido(totalLiquido)
-                .pagamentoAte(LocalDate.now().plusDays(10))
+                .pagamentoAte(req.getDataDesligamento().plusDays(10))
                 .build();
+    }
 
-        return response;
+    /** Saldo de salário = (salário / 30) * dias trabalhados no mês do desligamento. */
+    BigDecimal calcularSaldoSalario(BigDecimal salarioMensal, LocalDate dataDesligamento) {
+        int diasTrabalhadosNoMes = dataDesligamento.getDayOfMonth(); // considera que trabalhou até o dia do desligamento
+        BigDecimal diario = salarioMensal.divide(TRINTA, 10, RoundingMode.HALF_UP);
+        return diario.multiply(new BigDecimal(diasTrabalhadosNoMes)).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** 13º proporcional = salário * (meses trabalhados no ano corrente) / 12. */
+    BigDecimal calcularDecimoTerceiroProporcional(BigDecimal salarioMensal, int mesesNoAno) {
+        BigDecimal proporcao = new BigDecimal(mesesNoAno).divide(DOZE, 10, RoundingMode.HALF_UP);
+        return salarioMensal.multiply(proporcao).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal soma(List<Componente> comps) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (Componente c : comps) {
+            total = total.add(c.getValor());
+        }
+        return total.setScale(2, RoundingMode.HALF_UP);
     }
 }
