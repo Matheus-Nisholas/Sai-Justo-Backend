@@ -6,6 +6,7 @@ import br.com.nish.calculadora.auth.Usuario;
 import br.com.nish.calculadora.auth.UsuarioRepository;
 import br.com.nish.calculadora.controller.dto.AuthResponse;
 import br.com.nish.calculadora.controller.dto.LoginRequest;
+import br.com.nish.calculadora.controller.dto.MeResponse;
 import br.com.nish.calculadora.controller.dto.RegisterRequest;
 import br.com.nish.calculadora.security.JwtService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,11 +16,15 @@ import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -86,5 +91,31 @@ public class AuthController {
         long expiresIn = (long) 60 * 60;
         AuthResponse response = new AuthResponse(token, expiresIn);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Retorna informações do usuário autenticado.
+     * Útil para testar o JWT no cliente.
+     * @return id, email, nome e roles do usuário
+     */
+    @GetMapping("/me")
+    @Operation(summary = "Dados do usuário autenticado")
+    public ResponseEntity<MeResponse> me() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getName() == null) {
+            return ResponseEntity.status(401).build();
+        }
+        String email = auth.getName();
+        return usuarioRepository.findByEmail(email)
+                .map(u -> {
+                    MeResponse resp = new MeResponse(
+                            u.getId(),
+                            u.getEmail(),
+                            u.getNome(),
+                            u.getRoles().stream().map(r -> r.getName()).collect(Collectors.toSet())
+                    );
+                    return ResponseEntity.ok(resp);
+                })
+                .orElse(ResponseEntity.status(401).build());
     }
 }
