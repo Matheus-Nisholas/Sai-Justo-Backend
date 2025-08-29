@@ -2,6 +2,7 @@ package br.com.nish.calculadora.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
@@ -12,7 +13,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * Serviço utilitário para geração e validação de tokens JWT.
+ * Serviço utilitário para geração e validação de tokens JWT (JJWT 0.11.5).
  */
 @Service
 public class JwtService {
@@ -28,7 +29,7 @@ public class JwtService {
 
     /**
      * Gera um JWT assinado com HS256.
-     * @param subject identificador do usuário, geralmente o email
+     * @param subject identificador do usuário (email)
      * @param extraClaims claims adicionais (ex.: roles)
      * @return token JWT
      */
@@ -36,37 +37,33 @@ public class JwtService {
         Instant now = Instant.now();
         Instant exp = now.plusSeconds((long) expirationMinutes * 60L);
 
-        String token = Jwts.builder()
-                .subject(subject)
-                .issuer(issuer)
-                .claims(extraClaims)
-                .issuedAt(Date.from(now))
-                .expiration(Date.from(exp))
-                .signWith(getKey())
+        return Jwts.builder()
+                .setSubject(subject)
+                .setIssuer(issuer)
+                .addClaims(extraClaims != null ? extraClaims : Map.of())
+                .setIssuedAt(Date.from(now))
+                .setExpiration(Date.from(exp))
+                .signWith(getKey(), SignatureAlgorithm.HS256)
                 .compact();
-
-        return token;
     }
 
     /**
      * Valida e retorna as claims do token.
-     * Lança exceção do jjwt se o token for inválido/expirado.
+     * Lança exceção se o token for inválido/expirado.
      * @param token JWT
-     * @return Claims do token
+     * @return Claims
      */
     public Claims parseToken(String token) {
-        Claims claims = Jwts.parser()
-                .verifyWith(getKey())
+        return Jwts.parserBuilder()
+                .setSigningKey(getKey())
+                .requireIssuer(issuer)
                 .build()
-                .parseSignedClaims(token)
-                .getPayload();
-        return claims;
+                .parseClaimsJws(token)
+                .getBody();
     }
 
     /**
      * Retorna o subject (email) do token, se válido.
-     * @param token JWT
-     * @return subject
      */
     public String getSubject(String token) {
         return parseToken(token).getSubject();
@@ -74,8 +71,6 @@ public class JwtService {
 
     /**
      * Verifica rapidamente se o token é válido e não expirou.
-     * @param token JWT
-     * @return true se válido
      */
     public boolean isValid(String token) {
         try {
@@ -89,7 +84,7 @@ public class JwtService {
 
     private Key getKey() {
         byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
-        Key key = Keys.hmacShaKeyFor(bytes);
-        return key;
+        // garanta que o segredo tenha pelo menos 32 chars para HS256
+        return Keys.hmacShaKeyFor(bytes);
     }
 }
