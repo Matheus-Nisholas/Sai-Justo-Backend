@@ -3,36 +3,41 @@ package br.com.nish.calculadora.service;
 import br.com.nish.calculadora.dto.CalculoRescisaoRequest;
 import br.com.nish.calculadora.dto.CalculoRescisaoResponse;
 import br.com.nish.calculadora.dto.Componente;
+import br.com.nish.calculadora.dto.TipoRescisao;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 
 /**
  * Serviço responsável por executar o cálculo das verbas rescisórias.
- * Incremento 1: saldo de salário + 13º proporcional (reais), demais verbas virão nas próximas etapas.
+ * Coberturas: saldo de salário, 13º proporcional, férias proporcionais + 1/3,
+ * férias vencidas + 1/3, aviso prévio indenizado e FGTS + multa.
  */
 @Service
 public class CalculoRescisaoService {
 
     private static final BigDecimal TRINTA = new BigDecimal("30");
     private static final BigDecimal DOZE   = new BigDecimal("12");
+    private static final BigDecimal ZERO_2 = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
 
     public CalculoRescisaoResponse calcular(CalculoRescisaoRequest req) {
-        List<Componente> componentes = new ArrayList<Componente>();
+        List<Componente> componentes = new ArrayList<>();
 
         BigDecimal saldoSalario = calcularSaldoSalario(req.getSalarioMensal(), req.getDataDesligamento());
         componentes.add(new Componente("Saldo de salário", saldoSalario));
 
+        int mesesAno = clampMeses(req.getMesesTrabalhadosNoAnoAtual());
         BigDecimal decimoProporcional = calcularDecimoTerceiroProporcional(
-                req.getSalarioMensal(), req.getMesesTrabalhadosNoAnoAtual()
+                req.getSalarioMensal(), mesesAno
         );
         componentes.add(new Componente("13º proporcional", decimoProporcional));
 
         BigDecimal feriasPropMaisTerco = calcularFeriasProporcionaisMaisUmTerco(
-                req.getSalarioMensal(), req.getMesesTrabalhadosNoAnoAtual()
+                req.getSalarioMensal(), mesesAno
         );
         componentes.add(new Componente("Férias proporcionais + 1/3", feriasPropMaisTerco));
 
@@ -43,15 +48,24 @@ public class CalculoRescisaoService {
             componentes.add(new Componente("Férias vencidas + 1/3", feriasVencidas));
         }
 
-        // >>> NOVO: Aviso prévio indenizado (só adiciona se for indenizado)
         if (req.isAvisoIndenizado()) {
             int diasAviso = calcularDiasAvisoPrevio(req.getDataAdmissao(), req.getDataDesligamento());
             BigDecimal avisoIndenizado = calcularAvisoPrevioIndenizado(req.getSalarioMensal(), diasAviso);
             componentes.add(new Componente("Aviso prévio indenizado (" + diasAviso + " dias)", avisoIndenizado));
         }
 
+        // FGTS + multa
+        BigDecimal saldoFgts = Objects.requireNonNullElse(req.getSaldoFgtsDepositado(), BigDecimal.ZERO)
+                .setScale(2, RoundingMode.HALF_UP);
+        componentes.add(new Componente("Saldo FGTS depositado", saldoFgts));
+
+        BigDecimal multaFgts = calcularMultaFgts(req.getTipoRescisao(), saldoFgts);
+        if (multaFgts.compareTo(BigDecimal.ZERO) > 0) {
+            componentes.add(new Componente("Multa FGTS", multaFgts));
+        }
+
         BigDecimal totalBruto = soma(componentes);
-        BigDecimal totalDescontos = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalDescontos = ZERO_2; // descontos virão depois (INSS/IRRF, etc.)
         BigDecimal totalLiquido = totalBruto.subtract(totalDescontos).setScale(2, RoundingMode.HALF_UP);
 
         return CalculoRescisaoResponse.builder()
@@ -97,10 +111,9 @@ public class CalculoRescisaoService {
      */
     int calcularDiasAvisoPrevio(LocalDate dataAdmissao, LocalDate dataDesligamento) {
         if (dataAdmissao == null || dataDesligamento == null || dataDesligamento.isBefore(dataAdmissao)) {
-            return 30; // fallback seguro
+            return 30; // fallback
         }
-        // anos completos de vínculo
-        int anos = dataAdmissao.until(dataDesligamento).getYears();
+        int anos = dataAdmissao.until(dataDesligamento).getYears(); // anos completos
         if (anos <= 1) {
             return 30;
         }
@@ -117,11 +130,30 @@ public class CalculoRescisaoService {
         return diario.multiply(new BigDecimal(diasAviso)).setScale(2, RoundingMode.HALF_UP);
     }
 
+    /** Multa do FGTS: 40% (sem justa causa), 20% (acordo 484-A), 0% demais. */
+    BigDecimal calcularMultaFgts(TipoRescisao tipo, BigDecimal saldoFgts) {
+        if (tipo == null) return ZERO_2;
+        switch (tipo) {
+            case SEM_JUSTA_CAUSA:
+                return saldoFgts.multiply(new BigDecimal("0.40")).setScale(2, RoundingMode.HALF_UP);
+            case ACORDO_484A:
+                return saldoFgts.multiply(new BigDecimal("0.20")).setScale(2, RoundingMode.HALF_UP);
+            default:
+                return ZERO_2;
+        }
+    }
+
     private BigDecimal soma(List<Componente> comps) {
         BigDecimal total = BigDecimal.ZERO;
         for (Componente c : comps) {
             total = total.add(c.getValor());
         }
         return total.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private int clampMeses(int meses) {
+        if (meses < 0) return 0;
+        if (meses > 12) return 12;
+        return meses;
     }
 }
