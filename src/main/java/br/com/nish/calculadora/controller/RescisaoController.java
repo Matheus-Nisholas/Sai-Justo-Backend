@@ -1,5 +1,7 @@
 package br.com.nish.calculadora.controller;
 
+import br.com.nish.calculadora.auth.Usuario;
+import br.com.nish.calculadora.auth.UsuarioRepository;
 import br.com.nish.calculadora.dto.CalculoRescisaoRequest;
 import br.com.nish.calculadora.dto.CalculoRescisaoResponse;
 import br.com.nish.calculadora.model.CalculoRescisao;
@@ -10,10 +12,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,11 +38,11 @@ public class RescisaoController {
 
     private final CalculoRescisaoService calculoRescisaoService;
     private final CalculoRescisaoRepository calculoRescisaoRepository;
+    private final UsuarioRepository usuarioRepository;
     private final ObjectMapper objectMapper;
 
     /**
-     * Calcula as verbas e persiste o resultado.
-     * Enquanto o auth não está pronto, usa usuarioId temporário = 1.
+     * Calcula as verbas e persiste o resultado para o usuário autenticado.
      * @param request dados de entrada do cálculo
      * @return resultado do cálculo com breakdown
      * @throws JsonProcessingException erro ao serializar componentes
@@ -48,10 +53,15 @@ public class RescisaoController {
             @Valid @RequestBody CalculoRescisaoRequest request
     ) throws JsonProcessingException {
 
+        Long userId = getAuthenticatedUserId().orElse(null);
+        if (userId == null) {
+            return ResponseEntity.status(401).build();
+        }
+
         CalculoRescisaoResponse response = calculoRescisaoService.calcular(request);
 
         CalculoRescisao entity = CalculoRescisao.builder()
-                .usuarioId(1L) // TODO: substituir pelo id do usuário autenticado quando JWT estiver pronto
+                .usuarioId(userId)
                 .tipoRescisao(request.getTipoRescisao().name())
                 .salarioMensal(request.getSalarioMensal())
                 .dataAdmissao(request.getDataAdmissao())
@@ -73,8 +83,7 @@ public class RescisaoController {
     }
 
     /**
-     * Lista o histórico paginado de cálculos do usuário.
-     * Enquanto não há auth, filtra por usuarioId = 1.
+     * Lista o histórico paginado de cálculos do usuário autenticado.
      * @param page número da página, começando em 0
      * @param size tamanho da página
      * @return página com cálculos mais recentes primeiro
@@ -85,22 +94,40 @@ public class RescisaoController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
     ) {
+        Long userId = getAuthenticatedUserId().orElse(null);
+        if (userId == null) {
+            return ResponseEntity.status(401).build();
+        }
         Page<CalculoRescisao> result = calculoRescisaoRepository
-                .findByUsuarioIdOrderByCriadoEmDesc(1L, PageRequest.of(page, size));
+                .findByUsuarioIdOrderByCriadoEmDesc(userId, PageRequest.of(page, size));
         return ResponseEntity.ok(result);
     }
 
     /**
      * Busca um cálculo específico por id.
-     * Observação: quando o auth estiver pronto, validar o proprietário.
+     * Quando o auth estiver pronto, valida o proprietário.
      * @param id identificador do cálculo
-     * @return cálculo se existir
+     * @return cálculo se existir e pertencer ao usuário
      */
     @GetMapping("/{id}")
-    @Operation(summary = "Obter cálculo por id", description = "Retorna um cálculo específico")
+    @Operation(summary = "Obter cálculo por id", description = "Retorna um cálculo específico do usuário")
     public ResponseEntity<CalculoRescisao> obterPorId(@PathVariable Long id) {
+        Long userId = getAuthenticatedUserId().orElse(null);
+        if (userId == null) {
+            return ResponseEntity.status(401).build();
+        }
         return calculoRescisaoRepository.findById(id)
+                .filter(c -> c.getUsuarioId().equals(userId))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    private Optional<Long> getAuthenticatedUserId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getName() == null) {
+            return Optional.empty();
+        }
+        String email = auth.getName();
+        return usuarioRepository.findByEmail(email).map(Usuario::getId);
     }
 }
