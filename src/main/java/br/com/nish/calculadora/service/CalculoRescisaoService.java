@@ -31,7 +31,19 @@ public class CalculoRescisaoService {
         );
         componentes.add(new Componente("13º proporcional", decimoProporcional));
 
-        // Próximos incrementos: férias proporcionais + 1/3, aviso prévio, FGTS etc.
+        // NOVO: férias proporcionais + 1/3 e férias vencidas (opcional)
+        BigDecimal feriasPropMaisTerco = calcularFeriasProporcionaisMaisUmTerco(
+                req.getSalarioMensal(), req.getMesesTrabalhadosNoAnoAtual()
+        );
+        componentes.add(new Componente("Férias proporcionais + 1/3", feriasPropMaisTerco));
+
+        if (req.getFeriasVencidasDias() > 0) {
+            BigDecimal feriasVencidas = calcularFeriasVencidasMaisUmTerco(
+                    req.getSalarioMensal(), req.getFeriasVencidasDias()
+            );
+            componentes.add(new Componente("Férias vencidas + 1/3", feriasVencidas));
+        }
+
         BigDecimal totalBruto = soma(componentes);
         BigDecimal totalDescontos = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         BigDecimal totalLiquido = totalBruto.subtract(totalDescontos).setScale(2, RoundingMode.HALF_UP);
@@ -43,6 +55,22 @@ public class CalculoRescisaoService {
                 .totalLiquido(totalLiquido)
                 .pagamentoAte(req.getDataDesligamento().plusDays(10))
                 .build();
+    }
+
+    /** Férias proporcionais = (salário * meses/12) + 1/3 sobre esse valor. */
+    BigDecimal calcularFeriasProporcionaisMaisUmTerco(BigDecimal salarioMensal, int mesesNoAno) {
+        BigDecimal baseProp = salarioMensal.multiply(new BigDecimal(mesesNoAno))
+                .divide(DOZE, 10, RoundingMode.HALF_UP);
+        BigDecimal umTerco = baseProp.divide(new BigDecimal("3"), 10, RoundingMode.HALF_UP);
+        return baseProp.add(umTerco).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** Férias vencidas em dias corridos (ex.: 10 dias) + 1/3. */
+    BigDecimal calcularFeriasVencidasMaisUmTerco(BigDecimal salarioMensal, int diasVencidos) {
+        BigDecimal diario = salarioMensal.divide(TRINTA, 10, RoundingMode.HALF_UP);
+        BigDecimal base = diario.multiply(new BigDecimal(diasVencidos));
+        BigDecimal umTerco = base.divide(new BigDecimal("3"), 10, RoundingMode.HALF_UP);
+        return base.add(umTerco).setScale(2, RoundingMode.HALF_UP);
     }
 
     /** Saldo de salário = (salário / 30) * dias trabalhados no mês do desligamento. */
