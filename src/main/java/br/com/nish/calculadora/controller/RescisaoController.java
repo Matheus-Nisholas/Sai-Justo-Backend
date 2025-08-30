@@ -7,16 +7,22 @@ import br.com.nish.calculadora.dto.CalculoRescisaoResponse;
 import br.com.nish.calculadora.model.CalculoRescisao;
 import br.com.nish.calculadora.model.CalculoRescisaoRepository;
 import br.com.nish.calculadora.service.CalculoRescisaoService;
+import br.com.nish.calculadora.service.PdfGenerationService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lowagie.text.DocumentException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -39,6 +45,7 @@ public class RescisaoController {
     private final CalculoRescisaoRepository calculoRescisaoRepository;
     private final UsuarioRepository usuarioRepository;
     private final ObjectMapper objectMapper;
+    private final PdfGenerationService pdfGenerationService;
 
     @PostMapping("/calcular")
     @Operation(summary = "Calcular rescisão", description = "Calcula e salva o detalhamento das verbas")
@@ -100,16 +107,40 @@ public class RescisaoController {
 
         return calculoRescisaoRepository.findById(id)
                 .map(calculo -> {
-                    // Medida de segurança CRÍTICA: garante que um usuário só pode excluir seus próprios cálculos.
                     if (!calculo.getUsuarioId().equals(userId)) {
                         return ResponseEntity.status(HttpStatus.FORBIDDEN).<Void>build();
                     }
                     calculoRescisaoRepository.deleteById(id);
-                    // Retorna 204 No Content, o padrão REST para uma exclusão bem-sucedida.
                     return ResponseEntity.noContent().<Void>build();
                 })
-                // ALTERADO: Adicionamos <Void> para especificar o tipo do notFound e resolver o erro de compilação.
                 .orElse(ResponseEntity.<Void>notFound().build());
+    }
+
+    @GetMapping(value = "/{id}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    @Operation(summary = "Exportar cálculo para PDF", description = "Gera um recibo em PDF de um cálculo histórico")
+    public ResponseEntity<byte[]> gerarPdf(@PathVariable Long id) {
+        Long userId = getAuthenticatedUserId().orElseThrow(() -> new IllegalStateException("Usuário não autenticado"));
+
+        return calculoRescisaoRepository.findById(id)
+                .filter(calculo -> calculo.getUsuarioId().equals(userId))
+                .map(calculo -> {
+                    try {
+                        ByteArrayInputStream pdfStream = pdfGenerationService.gerarReciboRescisao(calculo);
+                        HttpHeaders headers = new HttpHeaders();
+                        headers.add("Content-Disposition", "inline; filename=recibo_rescisao_" + id + ".pdf");
+
+                        return ResponseEntity
+                                .ok()
+                                .headers(headers)
+                                .contentType(MediaType.APPLICATION_PDF)
+                                .body(pdfStream.readAllBytes());
+                    } catch (IOException | DocumentException e) {
+                        e.printStackTrace();
+                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).<byte[]>build();
+                    }
+                })
+                // ALTERADO: Adicionamos <byte[]> para corrigir o erro de compilação.
+                .orElse(ResponseEntity.<byte[]>notFound().build());
     }
 
     private Optional<Long> getAuthenticatedUserId() {
