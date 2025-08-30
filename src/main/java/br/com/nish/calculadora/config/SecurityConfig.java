@@ -10,34 +10,28 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+// NOVO: Importações necessárias para a configuração do CORS
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import java.util.List;
+import static org.springframework.security.config.Customizer.withDefaults; // NOVO: Import para withDefaults
 
-/**
- * Configuração de segurança HTTP baseada em JWT.
- */
 @Configuration
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
 
-    /**
-     * Injeta o filtro de autenticação JWT.
-     * @param jwtAuthFilter filtro que extrai e valida o token
-     */
     public SecurityConfig(JwtAuthFilter jwtAuthFilter) {
         this.jwtAuthFilter = jwtAuthFilter;
     }
 
-    /**
-     * Cadeia de filtros de segurança.
-     * Desabilita CSRF para APIs stateless, libera rotas públicas e exige autenticação nas demais.
-     * @param http objeto de configuração HTTP
-     * @return SecurityFilterChain
-     * @throws Exception erro de configuração
-     */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http.csrf(csrf -> csrf.disable());
+        // ALTERADO: Adicionamos a configuração do CORS à cadeia de filtros.
+        http.cors(withDefaults());
 
+        http.csrf(csrf -> csrf.disable());
         http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
         http.authorizeHttpRequests(auth -> auth
@@ -58,20 +52,31 @@ public class SecurityConfig {
     }
 
     /**
-     * Encoder de senhas usando BCrypt.
-     * @return BCryptPasswordEncoder
+     * NOVO: Bean para configurar a política de CORS.
+     * Aqui definimos explicitamente que o nosso frontend (rodando em localhost:4200)
+     * tem permissão para acessar a API.
      */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        // Permite requisições da origem do nosso app Angular
+        configuration.setAllowedOrigins(List.of("http://localhost:4200"));
+        // Permite os métodos HTTP mais comuns
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        // Permite cabeçalhos comuns, incluindo o de Autorização para o JWT
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        // Aplica esta configuração para todos os caminhos da nossa API
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
     @Bean
     public BCryptPasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    /**
-     * AuthenticationManager padrão do Spring.
-     * @param cfg configuração de autenticação
-     * @return AuthenticationManager
-     * @throws Exception erro ao obter o manager
-     */
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
         return cfg.getAuthenticationManager();
