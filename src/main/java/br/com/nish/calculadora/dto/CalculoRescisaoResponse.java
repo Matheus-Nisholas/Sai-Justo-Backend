@@ -25,5 +25,8 @@ public class CalculoRescisaoResponse {
 
     private List<Componente> componentes;
 
+    // ALTERADO: Adicionado campo para detalhar os descontos.
+    private List<Componente> descontos;
+
     private LocalDate pagamentoAte;
 }
