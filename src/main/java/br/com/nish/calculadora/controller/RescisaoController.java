@@ -16,9 +16,11 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,9 +29,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * Endpoints relacionados a cálculo de rescisão.
- */
 @RestController
 @RequestMapping("/api/v1/rescisoes")
 @RequiredArgsConstructor
@@ -41,27 +40,18 @@ public class RescisaoController {
     private final UsuarioRepository usuarioRepository;
     private final ObjectMapper objectMapper;
 
-    /**
-     * Calcula as verbas e persiste o resultado para o usuário autenticado.
-     * @param request dados de entrada do cálculo
-     * @return resultado do cálculo com breakdown
-     * @throws JsonProcessingException erro ao serializar componentes
-     */
     @PostMapping("/calcular")
     @Operation(summary = "Calcular rescisão", description = "Calcula e salva o detalhamento das verbas")
     public ResponseEntity<CalculoRescisaoResponse> calcular(
             @Valid @RequestBody CalculoRescisaoRequest request
     ) throws JsonProcessingException {
 
-        Long userId = getAuthenticatedUserId().orElse(null);
-        if (userId == null) {
-            return ResponseEntity.status(401).build();
-        }
+        Long userId = getAuthenticatedUserId().orElseThrow(() -> new IllegalStateException("Usuário não autenticado"));
 
         CalculoRescisaoResponse response = calculoRescisaoService.calcular(request);
-
         CalculoRescisao entity = CalculoRescisao.builder()
                 .usuarioId(userId)
+                .nomeEmpregado(request.getNomeEmpregado())
                 .tipoRescisao(request.getTipoRescisao().name())
                 .salarioMensal(request.getSalarioMensal())
                 .dataAdmissao(request.getDataAdmissao())
@@ -76,50 +66,50 @@ public class RescisaoController {
                 .pagamentoAte(response.getPagamentoAte())
                 .componentesJson(objectMapper.writeValueAsString(response.getComponentes()))
                 .build();
-
         calculoRescisaoRepository.save(entity);
 
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * Lista o histórico paginado de cálculos do usuário autenticado.
-     * @param page número da página, começando em 0
-     * @param size tamanho da página
-     * @return página com cálculos mais recentes primeiro
-     */
     @GetMapping("/historico")
     @Operation(summary = "Histórico de cálculos", description = "Retorna cálculos paginados do usuário atual")
     public ResponseEntity<Page<CalculoRescisao>> historico(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
     ) {
-        Long userId = getAuthenticatedUserId().orElse(null);
-        if (userId == null) {
-            return ResponseEntity.status(401).build();
-        }
+        Long userId = getAuthenticatedUserId().orElseThrow(() -> new IllegalStateException("Usuário não autenticado"));
         Page<CalculoRescisao> result = calculoRescisaoRepository
                 .findByUsuarioIdOrderByCriadoEmDesc(userId, PageRequest.of(page, size));
         return ResponseEntity.ok(result);
     }
 
-    /**
-     * Busca um cálculo específico por id.
-     * Quando o auth estiver pronto, valida o proprietário.
-     * @param id identificador do cálculo
-     * @return cálculo se existir e pertencer ao usuário
-     */
     @GetMapping("/{id}")
     @Operation(summary = "Obter cálculo por id", description = "Retorna um cálculo específico do usuário")
     public ResponseEntity<CalculoRescisao> obterPorId(@PathVariable Long id) {
-        Long userId = getAuthenticatedUserId().orElse(null);
-        if (userId == null) {
-            return ResponseEntity.status(401).build();
-        }
+        Long userId = getAuthenticatedUserId().orElseThrow(() -> new IllegalStateException("Usuário não autenticado"));
         return calculoRescisaoRepository.findById(id)
                 .filter(c -> c.getUsuarioId().equals(userId))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Excluir cálculo", description = "Remove um cálculo do histórico do usuário")
+    public ResponseEntity<Void> excluirCalculo(@PathVariable Long id) {
+        Long userId = getAuthenticatedUserId().orElseThrow(() -> new IllegalStateException("Usuário não autenticado"));
+
+        return calculoRescisaoRepository.findById(id)
+                .map(calculo -> {
+                    // Medida de segurança CRÍTICA: garante que um usuário só pode excluir seus próprios cálculos.
+                    if (!calculo.getUsuarioId().equals(userId)) {
+                        return ResponseEntity.status(HttpStatus.FORBIDDEN).<Void>build();
+                    }
+                    calculoRescisaoRepository.deleteById(id);
+                    // Retorna 204 No Content, o padrão REST para uma exclusão bem-sucedida.
+                    return ResponseEntity.noContent().<Void>build();
+                })
+                // ALTERADO: Adicionamos <Void> para especificar o tipo do notFound e resolver o erro de compilação.
+                .orElse(ResponseEntity.<Void>notFound().build());
     }
 
     private Optional<Long> getAuthenticatedUserId() {

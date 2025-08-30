@@ -13,10 +13,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-// NOVO: Importação da anotação
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-
 
 @Entity
 @Table(name = "calculos_rescisao")
@@ -30,28 +28,49 @@ public class CalculoRescisao {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // ... (outros campos permanecem os mesmos) ...
+    @Column(name = "usuario_id", nullable = false)
     private Long usuarioId;
+
+    @Column(name = "tipo_rescisao", nullable = false)
     private String tipoRescisao;
+
+    @Column(name = "salario_mensal", nullable = false)
     private BigDecimal salarioMensal;
+
+    @Column(name = "data_admissao", nullable = false)
     private LocalDate dataAdmissao;
+
+    @Column(name = "data_desligamento", nullable = false)
     private LocalDate dataDesligamento;
+
+    @Column(name = "aviso_indenizado", nullable = false)
     private boolean avisoIndenizado;
+
+    @Column(name = "ferias_vencidas_dias", nullable = false)
     private int feriasVencidasDias;
-    @Column(name = "meses_trabalhados_ano") // Corrigindo o nome da coluna para corresponder ao V2.sql
+
+    @Column(name = "meses_trabalhados_ano", nullable = false)
     private int mesesTrabalhadosNoAnoAtual;
+
+    @Column(name = "saldo_fgts_depositado", nullable = false)
     private BigDecimal saldoFgtsDepositado;
+
+    @Column(name = "total_bruto", nullable = false)
     private BigDecimal totalBruto;
+
+    @Column(name = "total_descontos", nullable = false)
     private BigDecimal totalDescontos;
+
+    @Column(name = "total_liquido", nullable = false)
     private BigDecimal totalLiquido;
+
+    @Column(name = "pagamento_ate")
     private LocalDate pagamentoAte;
 
-    /**
-     * JSON com a lista de componentes do cálculo.
-     */
-    // ALTERADO: Adicionamos @JdbcTypeCode(SqlTypes.JSON) para dizer ao Hibernate
-    // explicitamente para tratar este campo String como um tipo JSON no banco de dados.
-    // Isso resolve a incompatibilidade entre o H2 e o PostgreSQL.
+    // NOVO: Campo para armazenar o nome do empregado associado ao cálculo.
+    @Column(name = "nome_empregado")
+    private String nomeEmpregado;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "componentes", columnDefinition = "jsonb", nullable = false)
     private String componentesJson;

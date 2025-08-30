@@ -10,9 +10,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * DTO de entrada para cálculo de rescisão.
- */
 @Data
 @Builder
 @NoArgsConstructor
@@ -39,7 +36,9 @@ public class CalculoRescisaoRequest {
     @DecimalMin("0.0")
     private BigDecimal saldoFgtsDepositado;
 
-    // ALTERADO: Campo adicionado para o cálculo de dedução do IRRF.
     @Min(0)
     private int numeroDependentes;
+
+    // NOVO: Campo para receber o nome do empregado do frontend.
+    private String nomeEmpregado;
 }
