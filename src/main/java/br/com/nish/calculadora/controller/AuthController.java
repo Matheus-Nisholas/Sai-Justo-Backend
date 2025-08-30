@@ -22,7 +22,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -44,7 +46,6 @@ public class AuthController {
     private final BCryptPasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
-
     /**
      * Registra um novo usuário com ROLE_USER.
      * @param request dados de registro
@@ -61,7 +62,6 @@ public class AuthController {
         usuario.setEmail(request.getEmail());
         usuario.setNome(request.getNome());
         usuario.setSenhaHash(passwordEncoder.encode(request.getSenha()));
-
         Role roleUser = roleRepository.findByName("ROLE_USER").orElseGet(() -> {
             Role r = new Role();
             r.setName("ROLE_USER");
@@ -82,12 +82,24 @@ public class AuthController {
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         UsernamePasswordAuthenticationToken authToken =
                 new UsernamePasswordAuthenticationToken(request.getEmail(), request.getSenha());
-        authenticationManager.authenticate(authToken);
 
-        Map<String, Object> claims = new HashMap<String, Object>();
-        claims.put("roles", "ROLE_USER");
-        String token = jwtService.generateToken(request.getEmail(), claims);
+        /*
+         * ALTERADO: Capturamos o objeto Authentication retornado pelo manager,
+         * que contém os detalhes do usuário autenticado, incluindo suas roles.
+         */
+        Authentication authentication = authenticationManager.authenticate(authToken);
+        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
 
+        /*
+         * ALTERADO: As claims agora são extraídas dinamicamente do objeto UserDetails.
+         * Removemos o valor fixo "ROLE_USER" e inserimos a lista real de permissões do usuário.
+         */
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("roles", userDetails.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .collect(Collectors.toList()));
+
+        String token = jwtService.generateToken(userDetails.getUsername(), claims);
         long expiresIn = (long) 60 * 60;
         AuthResponse response = new AuthResponse(token, expiresIn);
         return ResponseEntity.ok(response);
@@ -112,7 +124,7 @@ public class AuthController {
                             u.getId(),
                             u.getEmail(),
                             u.getNome(),
-                            u.getRoles().stream().map(r -> r.getName()).collect(Collectors.toSet())
+                            u.getRoles().stream().map(Role::getName).collect(Collectors.toSet())
                     );
                     return ResponseEntity.ok(resp);
                 })
