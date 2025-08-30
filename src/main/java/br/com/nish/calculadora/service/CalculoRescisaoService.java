@@ -31,7 +31,6 @@ public class CalculoRescisaoService {
         int mesesAno = calcularMesesTrabalhadosNoAno(req.getTipoRescisao(), req.getDataAdmissao(),
                 req.getDataDesligamento(), req.isAvisoIndenizado());
 
-        // --- CÁLCULO DE PROVENTOS (VERBAS BRUTAS) ---
         BigDecimal saldoSalario = calcularSaldoSalario(req.getSalarioMensal(), req.getDataDesligamento());
         componentesProventos.add(new Componente("Saldo de salário", saldoSalario));
 
@@ -64,16 +63,25 @@ public class CalculoRescisaoService {
             }
         }
 
-        BigDecimal saldoFgts = Objects.requireNonNullElse(req.getSaldoFgtsDepositado(), BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
-        componentesProventos.add(new Componente("Saldo FGTS depositado", saldoFgts));
+        BigDecimal saldoFgts = Objects.requireNonNullElse(req.getSaldoFgtsDepositado(), BigDecimal.ZERO)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        if (incluiSaqueFgts(req.getTipoRescisao())) {
+            BigDecimal valorSaqueFgts = saldoFgts;
+            String nomeComponente = "Saque FGTS (saldo depositado)";
+
+            if (req.getTipoRescisao() == TipoRescisao.ACORDO_484A) {
+                valorSaqueFgts = saldoFgts.multiply(new BigDecimal("0.80")).setScale(2, RoundingMode.HALF_UP);
+                nomeComponente = "Saque FGTS (80% do saldo)";
+            }
+            componentesProventos.add(new Componente(nomeComponente, valorSaqueFgts));
+        }
 
         BigDecimal multaFgts = calcularMultaFgts(req.getTipoRescisao(), saldoFgts);
         if (multaFgts.compareTo(BigDecimal.ZERO) > 0) {
-            componentesProventos.add(new Componente("Multa FGTS", multaFgts));
+            componentesProventos.add(new Componente("Multa Rescisória FGTS", multaFgts));
         }
 
-        // --- CÁLCULO DE DESCONTOS ---
-        // INSS
         BigDecimal inssSobreSalario = descontosService.calcularInss(saldoSalario);
         if (inssSobreSalario.compareTo(ZERO_2) > 0) {
             componentesDesconto.add(new Componente("INSS sobre Saldo de Salário", inssSobreSalario));
@@ -84,7 +92,6 @@ public class CalculoRescisaoService {
             componentesDesconto.add(new Componente("INSS sobre 13º Salário", inssSobre13));
         }
 
-        // ALTERADO: Adicionado cálculo de IRRF
         BigDecimal irrfSobreSalario = descontosService.calcularIrrf(saldoSalario, inssSobreSalario, req.getNumeroDependentes());
         if (irrfSobreSalario.compareTo(ZERO_2) > 0) {
             componentesDesconto.add(new Componente("IRRF sobre Salário", irrfSobreSalario));
@@ -95,7 +102,6 @@ public class CalculoRescisaoService {
             componentesDesconto.add(new Componente("IRRF sobre 13º Salário", irrfSobre13));
         }
 
-        // --- TOTAIS ---
         BigDecimal totalBruto = somaComponentes(componentesProventos);
         BigDecimal totalDescontos = somaComponentes(componentesDesconto);
         BigDecimal totalLiquido = totalBruto.subtract(totalDescontos).setScale(2, RoundingMode.HALF_UP);
@@ -110,7 +116,36 @@ public class CalculoRescisaoService {
                 .build();
     }
 
-    // (O restante da classe, com todos os métodos auxiliares, permanece o mesmo)
+    boolean incluiSaqueFgts(TipoRescisao tipo) {
+        if (tipo == null) return false;
+        return switch (tipo) {
+            case PEDIDO_DEMISSAO, JUSTA_CAUSA -> false;
+            default -> true;
+        };
+    }
+
+    /**
+     * Calcula a multa rescisória do FGTS.
+     * - 40% para Sem Justa Causa.
+     * - 20% para Acordo 484-A.
+     * - 0% para os demais casos (incluindo Término de Contrato no prazo).
+     */
+    BigDecimal calcularMultaFgts(TipoRescisao tipo, BigDecimal saldoFgts) {
+        if (tipo == null || saldoFgts == null || saldoFgts.compareTo(BigDecimal.ZERO) <= 0) {
+            return ZERO_2;
+        }
+        return switch (tipo) {
+            // ALTERADO: Removido TERMO_CONTRATO deste caso. A multa de 40% é apenas para Sem Justa Causa.
+            case SEM_JUSTA_CAUSA ->
+                    saldoFgts.multiply(new BigDecimal("0.40")).setScale(2, RoundingMode.HALF_UP);
+
+            case ACORDO_484A ->
+                    saldoFgts.multiply(new BigDecimal("0.20")).setScale(2, RoundingMode.HALF_UP);
+
+            // Justa Causa, Pedido de Demissão e Término de Contrato não têm multa.
+            default -> ZERO_2;
+        };
+    }
 
     int calcularMesesTrabalhadosNoAno(TipoRescisao tipo, LocalDate adm, LocalDate deslig, boolean avisoIndenizado) {
         if (adm == null || deslig == null) return 0;
@@ -168,15 +203,6 @@ public class CalculoRescisaoService {
         return switch (tipo) {
             case PEDIDO_DEMISSAO, TERMO_CONTRATO, JUSTA_CAUSA -> false;
             default -> true;
-        };
-    }
-
-    BigDecimal calcularMultaFgts(TipoRescisao tipo, BigDecimal saldoFgts) {
-        if (tipo == null) return ZERO_2;
-        return switch (tipo) {
-            case SEM_JUSTA_CAUSA -> saldoFgts.multiply(new BigDecimal("0.40")).setScale(2, RoundingMode.HALF_UP);
-            case ACORDO_484A -> saldoFgts.multiply(new BigDecimal("0.20")).setScale(2, RoundingMode.HALF_UP);
-            default -> ZERO_2;
         };
     }
 
