@@ -35,18 +35,14 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Rotas públicas para autenticação, documentação e health check
                         .requestMatchers(
                                 "/auth/**",
                                 "/swagger-ui.html",
                                 "/swagger-ui/**",
-                                "/api-docs/**",
-                                "/actuator/health",
-                                "/actuator/info"
+                                "/api-docs/**"
                         ).permitAll()
-                        // Regra explícita para garantir que qualquer usuário autenticado possa acessar a API
+                        // ESTA É A LINHA QUE CORRIGE O ERRO 403
                         .requestMatchers("/api/v1/**").authenticated()
-                        // Regra de fallback para proteger qualquer outra rota
                         .anyRequest().authenticated()
                 );
 
