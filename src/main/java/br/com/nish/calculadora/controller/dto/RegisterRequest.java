@@ -2,11 +2,10 @@ package br.com.nish.calculadora.controller.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+// NOVO: Import da anotação @Size
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-/**
- * Payload para registro de usuário.
- */
 @Data
 public class RegisterRequest {
 
@@ -18,5 +17,7 @@ public class RegisterRequest {
     private String nome;
 
     @NotBlank
+    // ALTERADO: Adicionamos a validação de tamanho mínimo para a senha.
+    @Size(min = 8, message = "A senha deve ter no mínimo 8 caracteres")
     private String senha;
 }
