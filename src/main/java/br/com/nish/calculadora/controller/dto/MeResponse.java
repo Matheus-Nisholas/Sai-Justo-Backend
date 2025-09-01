@@ -14,4 +14,6 @@ public class MeResponse {
     private String email;
     private String nome;
     private Set<String> roles;
+    // NOVO: Adicionamos o username à resposta do /me.
+    private String username;
 }
