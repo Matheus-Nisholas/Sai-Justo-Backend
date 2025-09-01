@@ -56,3 +56,8 @@
       [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
 
 ---
+
+## Licença
+Este projeto é autoral © 2025 Matheus Nisholas Rocha da Silva.  
+O código pode ser utilizado apenas para **fins de estudo e aprendizado**, sendo **vedado o uso comercial** sem autorização do autor.  
+Veja o arquivo [LICENSE](./LICENSE) para mais detalhes.
