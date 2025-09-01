@@ -15,9 +15,11 @@ import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -32,9 +34,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * Endpoints de autenticação.
- */
 @RestController
 @RequestMapping("/auth")
 @RequiredArgsConstructor
@@ -46,88 +45,85 @@ public class AuthController {
     private final BCryptPasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
-    /**
-     * Registra um novo usuário com ROLE_USER.
-     * @param request dados de registro
-     * @return 200 OK se criado, 400 se email já existir
-     */
+
     @PostMapping("/register")
     @Transactional
     @Operation(summary = "Registrar usuário")
     public ResponseEntity<Void> register(@Valid @RequestBody RegisterRequest request) {
-        if (usuarioRepository.existsByEmail(request.getEmail())) {
+        // Valida se o email ou o username já existem
+        if (usuarioRepository.existsByEmail(request.getEmail()) || usuarioRepository.existsByUsername(request.getUsername())) {
             return ResponseEntity.badRequest().build();
         }
+
         Usuario usuario = new Usuario();
         usuario.setEmail(request.getEmail());
         usuario.setNome(request.getNome());
+        usuario.setUsername(request.getUsername()); // Salva o novo campo
         usuario.setSenhaHash(passwordEncoder.encode(request.getSenha()));
+
         Role roleUser = roleRepository.findByName("ROLE_USER").orElseGet(() -> {
             Role r = new Role();
             r.setName("ROLE_USER");
             return roleRepository.save(r);
         });
+
         usuario.setRoles(Set.of(roleUser));
         usuarioRepository.save(usuario);
         return ResponseEntity.ok().build();
     }
 
-    /**
-     * Autentica e retorna o token JWT.
-     * @param request credenciais
-     * @return token e expiração em segundos
-     */
     @PostMapping("/login")
     @Operation(summary = "Login")
-    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
-        UsernamePasswordAuthenticationToken authToken =
-                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getSenha());
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
+        // 1. Busca o usuário pelo campo 'login' (que pode ser email ou username)
+        Optional<Usuario> usuarioOpt = usuarioRepository.findByUsernameOrEmail(request.getLogin(), request.getLogin());
+        if (usuarioOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Credenciais inválidas");
+        }
+        Usuario usuario = usuarioOpt.get();
 
-        /*
-         * ALTERADO: Capturamos o objeto Authentication retornado pelo manager,
-         * que contém os detalhes do usuário autenticado, incluindo suas roles.
-         */
+        // 2. Usa o EMAIL do usuário encontrado para a autenticação do Spring Security
+        UsernamePasswordAuthenticationToken authToken =
+                new UsernamePasswordAuthenticationToken(usuario.getEmail(), request.getSenha());
+
         Authentication authentication = authenticationManager.authenticate(authToken);
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
 
-        /*
-         * ALTERADO: As claims agora são extraídas dinamicamente do objeto UserDetails.
-         * Removemos o valor fixo "ROLE_USER" e inserimos a lista real de permissões do usuário.
-         */
+        // 3. Gera o token com as informações corretas
         Map<String, Object> claims = new HashMap<>();
         claims.put("roles", userDetails.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.toList()));
+        claims.put("username", usuario.getUsername());
 
-        String token = jwtService.generateToken(userDetails.getUsername(), claims);
-        long expiresIn = (long) 60 * 60;
+        String token = jwtService.generateToken(userDetails.getUsername(), claims); // O 'subject' do token continua sendo o email
+        long expiresIn = 3600; // 1 hora
         AuthResponse response = new AuthResponse(token, expiresIn);
+
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * Retorna informações do usuário autenticado.
-     * Útil para testar o JWT no cliente.
-     * @return id, email, nome e roles do usuário
-     */
     @GetMapping("/me")
     @Operation(summary = "Dados do usuário autenticado")
     public ResponseEntity<MeResponse> me() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || auth.getName() == null) {
-            return ResponseEntity.status(401).build();
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
+
         String email = auth.getName();
         return usuarioRepository.findByEmail(email)
                 .map(u -> {
+                    // Inclui o username na resposta
                     MeResponse resp = new MeResponse(
                             u.getId(),
                             u.getEmail(),
                             u.getNome(),
-                            u.getRoles().stream().map(Role::getName).collect(Collectors.toSet())
+                            u.getRoles().stream().map(Role::getName).collect(Collectors.toSet()),
+                            u.getUsername()
                     );
                     return ResponseEntity.ok(resp);
                 })
-                .orElse(ResponseEntity.status(401).build());
+                .orElse(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
     }
 }
