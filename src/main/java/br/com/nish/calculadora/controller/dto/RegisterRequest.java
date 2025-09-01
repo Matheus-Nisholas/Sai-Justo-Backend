@@ -20,4 +20,9 @@ public class RegisterRequest {
     // ALTERADO: Adicionamos a validação de tamanho mínimo para a senha.
     @Size(min = 8, message = "A senha deve ter no mínimo 8 caracteres")
     private String senha;
+
+    // NOVO: Adicionamos o campo de nome de usuário, que será obrigatório.
+    @NotBlank
+    @Size(min = 3, message = "O nome de usuário deve ter no mínimo 3 caracteres")
+    private String username;
 }
