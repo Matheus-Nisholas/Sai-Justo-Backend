@@ -17,6 +17,11 @@ public class Usuario {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // NOVO: Adicionamos o campo para o nome de usuário.
+    @Column(unique = true)
+    private String username;
+
+
     @Column(nullable = false, unique = true)
     private String email;
 
