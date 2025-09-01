@@ -12,7 +12,7 @@ public class LoginRequest {
 
     @Email
     @NotBlank
-    private String email;
+    private String login;
 
     @NotBlank
     private String senha;
